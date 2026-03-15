@@ -17,7 +17,8 @@ def _bootstrap_gcp_credentials() -> None:
     if not b64:
         return
     if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
-        return  # already set (e.g. local bind-mount)
+        if os.path.isfile(os.environ["GOOGLE_APPLICATION_CREDENTIALS"]):
+            return  # file exists locally, use it as-is
     data = base64.b64decode(b64)
     tmp = tempfile.NamedTemporaryFile(
         delete=False, suffix=".json", prefix="gcp_sa_"
