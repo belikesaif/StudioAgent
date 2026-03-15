@@ -1,10 +1,34 @@
+import base64
 import logging
+import os
+import tempfile
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+
+
+def _bootstrap_gcp_credentials() -> None:
+    """Decode GOOGLE_CREDENTIALS_B64 → write to a temp file → set GOOGLE_APPLICATION_CREDENTIALS.
+    This lets Railway/Render/Fly.io receive the service-account JSON as an env var."""
+    b64 = os.environ.get("GOOGLE_CREDENTIALS_B64")
+    if not b64:
+        return
+    if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+        return  # already set (e.g. local bind-mount)
+    data = base64.b64decode(b64)
+    tmp = tempfile.NamedTemporaryFile(
+        delete=False, suffix=".json", prefix="gcp_sa_"
+    )
+    tmp.write(data)
+    tmp.flush()
+    tmp.close()
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+
+
+_bootstrap_gcp_credentials()
 
 from app.config import get_settings
 
