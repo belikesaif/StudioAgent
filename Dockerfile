@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
         libsm6 \
         libxext6 \
-        libgl1-mesa-glx \
+        libgl1 \
         fonts-liberation \
         fonts-open-sans \
     && rm -rf /var/lib/apt/lists/* \
