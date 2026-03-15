@@ -162,14 +162,6 @@ class MoviePyEngine:
 
         result = concatenate_videoclips(clips, method="compose")
 
-        # Close individual segment clips to free file handles and memory.
-        # The concatenated result holds its own copy of the frame data.
-        for c in clips:
-            try:
-                c.close()
-            except Exception:
-                pass
-
         return result
 
     def apply_zoom_effects(self, clip: VideoFileClip, scenes: list[Scene]) -> VideoFileClip:
