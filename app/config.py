@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     gcp_project_id: str = ""
     gcs_bucket_name: str = "studioagent-videos"
     google_application_credentials: str = ""
+    google_credentials_b64: str = ""  # base64-encoded service account JSON for Railway/cloud
 
     # Server
     host: str = "0.0.0.0"
