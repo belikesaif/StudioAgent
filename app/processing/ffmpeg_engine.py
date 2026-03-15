@@ -26,7 +26,9 @@ class FFmpegEngine:
         return result
 
     def execute_cuts(self, scenes: list[Scene]) -> list[Path]:
-        """Cut the source video into segments based on scene boundaries."""
+        """Cut the source video into segments based on scene boundaries.
+        Scales down to max 1920px (1080p) at this stage to cap memory usage
+        for 4K/high-res inputs on constrained servers."""
         segments = []
         for i, scene in enumerate(scenes):
             # Skip scenes that are entirely cut
@@ -44,7 +46,9 @@ class FFmpegEngine:
                 "-i", str(self.source),
                 "-ss", f"{scene.start_time:.3f}",
                 "-to", f"{scene.end_time:.3f}",
-                "-c:v", "libx264", "-preset", "fast",
+                # Scale to max 1920px on longest side; never upscale; ensure even dims
+                "-vf", "scale=1920:1920:force_original_aspect_ratio=decrease:force_divisible_by=2",
+                "-c:v", "libx264", "-preset", "fast", "-threads", "2",
                 "-c:a", "aac",
                 str(output),
             ]
@@ -94,7 +98,7 @@ class FFmpegEngine:
                 "-i", str(seg_path),
                 "-filter:v", video_filter,
                 "-filter:a", atempo_filters,
-                "-c:v", "libx264", "-preset", "fast",
+                "-c:v", "libx264", "-preset", "fast", "-threads", "2",
                 str(output),
             ]
             self._run(cmd)
@@ -164,7 +168,7 @@ class FFmpegEngine:
             self.ffmpeg, "-y",
             "-i", str(video_path),
             "-vf", vf,
-            "-c:v", "libx264", "-preset", "fast",
+            "-c:v", "libx264", "-preset", "fast", "-threads", "2",
             "-c:a", "copy",
             str(output),
         ]
@@ -190,7 +194,7 @@ class FFmpegEngine:
             self.ffmpeg, "-y",
             "-i", str(input_path),
             "-vf", crop_filter,
-            "-c:v", "libx264", "-preset", "fast",
+            "-c:v", "libx264", "-preset", "fast", "-threads", "2",
             "-c:a", "copy",
             str(output_path),
         ]
@@ -204,7 +208,7 @@ class FFmpegEngine:
             self.ffmpeg, "-y",
             "-i", str(video_path),
             "-vf", f"ass={ass_escaped}",
-            "-c:v", "libx264", "-preset", "fast",
+            "-c:v", "libx264", "-preset", "fast", "-threads", "2",
             "-c:a", "copy",
             str(output_path),
         ]

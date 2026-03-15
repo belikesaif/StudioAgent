@@ -285,6 +285,6 @@ class MoviePyEngine:
             audio_codec="aac",
             fps=30,
             preset="fast",
-            threads=4,
+            threads=2,
         )
         video_clip.close()

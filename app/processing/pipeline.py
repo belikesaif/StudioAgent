@@ -108,6 +108,7 @@ async def run_pipeline(job_id: str, video_path: Path, settings: Settings):
             codec="libx264",
             preset="fast",
             audio_codec="aac",
+            threads=2,
         )
         base_video.close()
 
