@@ -145,10 +145,19 @@ function updateProgress(percent, text) {
 
 function showResults(job) {
     showSection('results');
+
+    // Video previews (stream endpoint serves inline without Content-Disposition)
+    const preview16x9 = document.getElementById('preview-16x9');
+    const preview9x16 = document.getElementById('preview-9x16');
+    preview16x9.src = `${API_BASE}/jobs/${job.job_id}/stream/16x9`;
+    preview9x16.src = `${API_BASE}/jobs/${job.job_id}/stream/9x16`;
+
+    // Download links (download endpoint sets Content-Disposition: attachment)
     document.getElementById('download-16x9').href =
         `${API_BASE}/jobs/${job.job_id}/download/16x9`;
     document.getElementById('download-9x16').href =
         `${API_BASE}/jobs/${job.job_id}/download/9x16`;
+
     if (job.editing_plan) {
         document.getElementById('plan-json').textContent =
             JSON.stringify(job.editing_plan, null, 2);

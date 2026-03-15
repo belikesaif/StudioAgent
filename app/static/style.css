@@ -513,6 +513,20 @@ body {
 .card p { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 1rem; }
 .card .btn { width: 100%; }
 
+/* Video Preview */
+.video-preview {
+    width: 100%;
+    max-height: 280px;
+    border-radius: 8px;
+    background: #000;
+    margin-bottom: 1rem;
+    object-fit: contain;
+}
+
+.video-preview-vertical {
+    max-height: 360px;
+}
+
 /* =====================
    PLAN VIEWER / JSON
    ===================== */

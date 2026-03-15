@@ -3,13 +3,22 @@ import asyncio
 
 import aiofiles
 from fastapi import APIRouter, UploadFile, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse
 
 from app.config import get_settings, Settings
 from app.api.schemas import UploadResponse, JobStatusResponse, JobListResponse, JobStatus
 from app.jobs.manager import job_manager
 
 router = APIRouter()
+
+
+def _resolve_local_path(job_id: str, format_key: str):
+    """Return the local file path for a given job + format, or None."""
+    settings = get_settings()
+    local_path = settings.temp_dir / job_id / f"final_{format_key}.mp4"
+    if local_path.exists():
+        return local_path
+    return None
 
 
 @router.post("/upload", response_model=UploadResponse)
@@ -74,6 +83,7 @@ async def get_job_plan(job_id: str):
 
 @router.get("/jobs/{job_id}/download/{format_key}")
 async def download_video(job_id: str, format_key: str):
+    """Serve the rendered video as a direct download (no redirect)."""
     job = await job_manager.get_job(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
@@ -86,25 +96,49 @@ async def download_video(job_id: str, format_key: str):
     if not aspect or aspect not in job.output_gcs_uris:
         raise HTTPException(404, f"Format '{format_key}' not available")
 
-    gcs_uri = job.output_gcs_uris[aspect]
+    # Prefer local file (avoids redirect, gives direct download)
+    local_path = _resolve_local_path(job_id, format_key)
+    if local_path:
+        return FileResponse(
+            path=str(local_path),
+            media_type="video/mp4",
+            filename=f"studioagent_{format_key}.mp4",
+        )
 
-    # Generate signed URL and redirect
+    # Fallback: GCS signed URL redirect (only when local file is gone)
     try:
+        from fastapi.responses import RedirectResponse
         from app.storage.gcs import generate_signed_url
+        gcs_uri = job.output_gcs_uris[aspect]
         gcs_path = gcs_uri.replace(f"gs://{get_settings().gcs_bucket_name}/", "")
         signed_url = generate_signed_url(gcs_path)
         return RedirectResponse(url=signed_url)
     except Exception:
-        # Fallback: try to serve from local temp dir
-        from fastapi.responses import FileResponse
-        local_path = get_settings().temp_dir / job_id / f"final_{format_key}.mp4"
-        if local_path.exists():
-            return FileResponse(
-                path=str(local_path),
-                media_type="video/mp4",
-                filename=f"studioagent_{format_key}.mp4",
-            )
         raise HTTPException(500, "Could not generate download URL")
+
+
+@router.get("/jobs/{job_id}/stream/{format_key}")
+async def stream_video(job_id: str, format_key: str):
+    """Serve the rendered video inline for browser playback (preview)."""
+    job = await job_manager.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found")
+    if job.status != JobStatus.COMPLETED:
+        raise HTTPException(400, "Job not completed yet")
+
+    format_map = {"16x9": "16:9", "9x16": "9:16"}
+    aspect = format_map.get(format_key)
+    if not aspect or aspect not in job.output_gcs_uris:
+        raise HTTPException(404, f"Format '{format_key}' not available")
+
+    local_path = _resolve_local_path(job_id, format_key)
+    if local_path:
+        return FileResponse(
+            path=str(local_path),
+            media_type="video/mp4",
+        )
+
+    raise HTTPException(404, "Video file not available for streaming")
 
 
 @router.delete("/jobs/{job_id}")
