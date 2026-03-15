@@ -1,0 +1,11 @@
+.env
+.git
+__pycache__
+*.pyc
+tmp/
+tests/
+scripts/
+*.md
+.vscode/
+.idea/
+_plan_raw.txt

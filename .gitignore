@@ -1,0 +1,53 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temp files
+tmp/
+*.tmp
+intermediateTEMP_MPY_*
+
+# Database (keep folder, not contents)
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Stray pip output files
+=*
+
+# GCP credentials
+service-account.json
+*.json.key
+gen-lang-client-*.json
+*-credentials.json
+*-service-account.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Video files (too large for git)
+*.mp4
+*.mov
+*.avi
+*.webm
+*.mkv
+
+# Plan artifacts
+_plan_raw.txt
