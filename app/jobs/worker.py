@@ -21,8 +21,9 @@ logger = logging.getLogger(__name__)
 # Each job can use 1–2 GB RAM; raise only if the server has ≥8 GB.
 MAX_CONCURRENT = 1
 
-# Resolve the project root once at import time (two levels up from this file)
-_PROJECT_ROOT = Path(__file__).parent.parent
+# Resolve the project root once at import time (three levels up from this file:
+# worker.py → jobs/ → app/ → project root)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 class PipelineWorker:
