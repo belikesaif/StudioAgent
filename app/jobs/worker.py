@@ -62,20 +62,18 @@ class PipelineWorker:
             proc = await asyncio.create_subprocess_exec(
                 sys.executable, "-m", "app.worker_process", job_id,
                 cwd=str(_PROJECT_ROOT),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                # Inherit stdout/stderr so all subprocess logs appear in Railway/Docker logs
+                stdout=None,
+                stderr=None,
             )
             logger.info(f"Subprocess PID={proc.pid} for job {job_id}")
 
-            # await proc.communicate() is async — the event loop stays free
-            # to serve HTTP requests and WebSocket updates while the subprocess
-            # does all the CPU/GPU work in its own process.
-            _stdout, stderr = await proc.communicate()
+            # await proc.wait() is async — event loop stays free while subprocess works
+            await proc.wait()
 
             if proc.returncode != 0:
-                err = stderr.decode(errors="replace")[-600:] if stderr else "unknown error"
-                logger.error(f"Subprocess for job {job_id} exited {proc.returncode}: {err}")
-                # Mark failed only if the subprocess didn't already do it
+                logger.error(f"Subprocess for job {job_id} exited {proc.returncode}")
+                # Subprocess writes its own error to DB; only mark failed if it didn't
                 from app.jobs.manager import job_manager
                 from app.api.schemas import JobStatus
                 job = await job_manager.get_job(job_id)
@@ -83,7 +81,7 @@ class PipelineWorker:
                     await job_manager.update_job(
                         job_id,
                         status=JobStatus.FAILED,
-                        error=f"Process exited {proc.returncode}: {err}",
+                        error=f"Worker process exited with code {proc.returncode} — check server logs",
                     )
             else:
                 logger.info(f"Subprocess completed for job {job_id}")

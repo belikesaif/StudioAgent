@@ -10,10 +10,20 @@ reads it via WebSocket polling.
 """
 import asyncio
 import base64
+import logging
 import os
 import sys
 import tempfile
 from pathlib import Path
+
+# Configure logging immediately so all output is visible in Railway/Docker logs
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [worker] %(levelname)s %(name)s: %(message)s",
+    stream=sys.stdout,
+    force=True,
+)
+logger = logging.getLogger(__name__)
 
 
 def _bootstrap_gcp_credentials() -> None:
@@ -36,12 +46,14 @@ _bootstrap_gcp_credentials()
 
 
 async def main(job_id: str) -> None:
+    logger.info(f"Worker started for job {job_id}")
     from app.config import get_settings
     from app.jobs.manager import job_manager
     from app.api.schemas import JobStatus
 
     settings = get_settings()
     settings.temp_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"temp_dir={settings.temp_dir}  ffmpeg={settings.ffmpeg_path}")
 
     # Each subprocess gets its own SQLite connection
     await job_manager.init()
@@ -50,22 +62,25 @@ async def main(job_id: str) -> None:
     if settings.gemini_api_key:
         from app.agent.client import init_genai_client
         init_genai_client(settings)
+        logger.info("GenAI client initialised")
 
     if settings.gcp_project_id:
         try:
             from app.storage.gcs import init_gcs_client
             init_gcs_client(settings)
-        except Exception:
-            pass
+            logger.info("GCS client initialised")
+        except Exception as e:
+            logger.warning(f"GCS init skipped: {e}")
 
     # Fetch job metadata from DB
     job = await job_manager.get_job(job_id)
     if job is None:
-        print(f"[worker] Job {job_id} not found in database", file=sys.stderr)
+        logger.error(f"Job {job_id} not found in database")
         await job_manager.close()
         sys.exit(1)
 
     if job.temp_path is None or not job.temp_path.exists():
+        logger.error(f"Source file missing: {job.temp_path}")
         await job_manager.update_job(
             job_id,
             status=JobStatus.FAILED,
@@ -74,8 +89,10 @@ async def main(job_id: str) -> None:
         await job_manager.close()
         sys.exit(1)
 
+    logger.info(f"Starting pipeline for {job.temp_path}")
     from app.processing.pipeline import run_pipeline
     await run_pipeline(job_id, job.temp_path, settings)
+    logger.info(f"Pipeline finished for job {job_id}")
 
     await job_manager.close()
 

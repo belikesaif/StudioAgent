@@ -16,10 +16,13 @@ class FFmpegEngine:
 
     def _run(self, cmd: list[str]) -> subprocess.CompletedProcess:
         """Execute an FFmpeg command, raising on failure."""
-        logger.info(f"FFmpeg: {' '.join(cmd[:6])}...")
+        logger.info(f"FFmpeg cmd: {' '.join(str(c) for c in cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         if result.returncode != 0:
-            raise RuntimeError(f"FFmpeg failed: {result.stderr[:500]}")
+            # FFmpeg prints its version banner first; the real error is at the *end*
+            error_tail = result.stderr[-2000:] if result.stderr else "no stderr"
+            logger.error(f"FFmpeg stderr tail:\n{error_tail}")
+            raise RuntimeError(f"FFmpeg failed (exit {result.returncode}): {error_tail}")
         return result
 
     def execute_cuts(self, scenes: list[Scene]) -> list[Path]:
