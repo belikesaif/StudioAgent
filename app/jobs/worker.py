@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 # Each job can use 1–2 GB RAM; raise only if the server has ≥8 GB.
 MAX_CONCURRENT = 1
 
+# Kill a subprocess if it hasn't finished within this many seconds (15 min).
+_SUBPROCESS_TIMEOUT = 900
+
 # Resolve the project root once at import time (three levels up from this file:
 # worker.py → jobs/ → app/ → project root)
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -51,40 +54,61 @@ class PipelineWorker:
     async def _dispatch_loop(self):
         """Pull job IDs from the queue and spawn a subprocess for each."""
         while True:
-            job_id = await self._queue.get()
-            # Fire-and-forget: the task waits on the semaphore internally,
-            # so the loop is immediately free to dequeue the next job.
-            asyncio.create_task(self._run_subprocess(job_id))
+            try:
+                job_id = await self._queue.get()
+                asyncio.create_task(self._run_subprocess(job_id))
+            except Exception:
+                logger.exception("Dispatch loop iteration failed — continuing")
 
     async def _run_subprocess(self, job_id: str):
-        async with self._semaphore:
-            logger.info(f"Spawning subprocess for job {job_id}")
-            proc = await asyncio.create_subprocess_exec(
-                sys.executable, "-m", "app.worker_process", job_id,
-                cwd=str(_PROJECT_ROOT),
-                # Inherit stdout/stderr so all subprocess logs appear in Railway/Docker logs
-                stdout=None,
-                stderr=None,
-            )
-            logger.info(f"Subprocess PID={proc.pid} for job {job_id}")
+        try:
+            async with self._semaphore:
+                logger.info(f"Spawning subprocess for job {job_id}")
+                proc = await asyncio.create_subprocess_exec(
+                    sys.executable, "-m", "app.worker_process", job_id,
+                    cwd=str(_PROJECT_ROOT),
+                    # Inherit stdout/stderr so all subprocess logs appear in Railway/Docker logs
+                    stdout=None,
+                    stderr=None,
+                )
+                logger.info(f"Subprocess PID={proc.pid} for job {job_id}")
 
-            # await proc.wait() is async — event loop stays free while subprocess works
-            await proc.wait()
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=_SUBPROCESS_TIMEOUT)
+                except asyncio.TimeoutError:
+                    logger.error(
+                        f"Subprocess for job {job_id} timed out after "
+                        f"{_SUBPROCESS_TIMEOUT}s — killing PID {proc.pid}"
+                    )
+                    proc.kill()
+                    await proc.wait()
 
-            if proc.returncode != 0:
-                logger.error(f"Subprocess for job {job_id} exited {proc.returncode}")
-                # Subprocess writes its own error to DB; only mark failed if it didn't
+                if proc.returncode != 0:
+                    logger.error(f"Subprocess for job {job_id} exited {proc.returncode}")
+                    # Subprocess writes its own error to DB; only mark failed if it didn't
+                    from app.jobs.manager import job_manager
+                    from app.api.schemas import JobStatus
+                    job = await job_manager.get_job(job_id)
+                    if job and job.status not in (JobStatus.COMPLETED, JobStatus.FAILED):
+                        await job_manager.update_job(
+                            job_id,
+                            status=JobStatus.FAILED,
+                            error=f"Worker process exited with code {proc.returncode} — check server logs",
+                        )
+                else:
+                    logger.info(f"Subprocess completed for job {job_id}")
+        except Exception:
+            logger.exception(f"_run_subprocess failed for job {job_id}")
+            try:
                 from app.jobs.manager import job_manager
                 from app.api.schemas import JobStatus
-                job = await job_manager.get_job(job_id)
-                if job and job.status not in (JobStatus.COMPLETED, JobStatus.FAILED):
-                    await job_manager.update_job(
-                        job_id,
-                        status=JobStatus.FAILED,
-                        error=f"Worker process exited with code {proc.returncode} — check server logs",
-                    )
-            else:
-                logger.info(f"Subprocess completed for job {job_id}")
+                await job_manager.update_job(
+                    job_id,
+                    status=JobStatus.FAILED,
+                    error="Internal worker error — check server logs",
+                )
+            except Exception:
+                logger.exception(f"Failed to mark job {job_id} as failed")
 
 
 # Module-level singleton

@@ -235,3 +235,17 @@ class FFmpegEngine:
             str(output_path),
         ]
         self._run(cmd)
+
+    def resize_video(self, input_path: Path, output_path: Path, width: int, height: int):
+        """Resize video to exact dimensions using FFmpeg (much lower memory than MoviePy)."""
+        cmd = [
+            self.ffmpeg, "-y",
+            "-i", str(input_path),
+            "-vf", f"scale={width}:{height}:force_divisible_by=2",
+            "-c:v", "libx264", "-preset", "fast", "-threads", "2",
+            "-x264-params", self._X264_LOW_MEM,
+            "-c:a", "aac",
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
+        self._run(cmd)

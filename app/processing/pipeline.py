@@ -129,28 +129,38 @@ async def run_pipeline(job_id: str, video_path: Path, settings: Settings):
         else:
             subtitled_path = graded_path
 
-        # 5i: Apply typography overlays
-        await job_manager.update_job(job_id, progress=84, current_step="Adding overlays")
-        from moviepy import VideoFileClip
-        subtitled_clip = VideoFileClip(str(subtitled_path))
-        final_composed = await _in_thread(moviepy.apply_overlays, subtitled_clip, plan.scenes)
+        # 5i + 5j: Overlays and 16:9 output.
+        # If no overlay actions exist, skip MoviePy entirely and use FFmpeg
+        # for the resize — this avoids a second memory-heavy MoviePy pass.
+        from app.agent.models import ActionType
+        has_overlays = any(
+            a.action_type in (ActionType.TYPOGRAPHY, ActionType.LOWER_THIRD)
+            for s in plan.scenes for a in s.actions
+        )
 
-        # 5j: Produce 16:9 output
-        # Audio sync note: final_composed already carries the properly-timed audio
-        # from the processed intermediate — we do NOT replace it with original raw audio.
-        await job_manager.update_job(job_id, progress=90, current_step="Rendering 16:9")
+        await job_manager.update_job(job_id, progress=84, current_step="Adding overlays")
         output_16x9 = work_dir / "final_16x9.mp4"
         landscape_format = next(
             (f for f in plan.output_formats if f.aspect_ratio == "16:9"),
             plan.output_formats[0] if plan.output_formats else None,
         )
-        if landscape_format:
+
+        if has_overlays and landscape_format:
+            from moviepy import VideoFileClip
+            subtitled_clip = VideoFileClip(str(subtitled_path))
+            final_composed = await _in_thread(moviepy.apply_overlays, subtitled_clip, plan.scenes)
+
+            await job_manager.update_job(job_id, progress=90, current_step="Rendering 16:9")
             await _in_thread(
                 moviepy.render_final,
                 final_composed,
                 output_16x9,
                 landscape_format,
             )
+        elif landscape_format:
+            await job_manager.update_job(job_id, progress=90, current_step="Rendering 16:9")
+            target_w, target_h = landscape_format.resolution
+            await _in_thread(ffmpeg.resize_video, subtitled_path, output_16x9, target_w, target_h)
 
         # 5k: Produce 9:16 output
         await job_manager.update_job(job_id, progress=95, current_step="Rendering 9:16")

@@ -30,6 +30,9 @@ class JobManager:
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         self._db = await aiosqlite.connect(str(DB_PATH))
         self._db.row_factory = aiosqlite.Row
+        # WAL mode allows concurrent reads from the main process while the
+        # worker subprocess is writing, avoiding SQLITE_BUSY errors.
+        await self._db.execute("PRAGMA journal_mode=WAL")
         await self._db.execute("""
             CREATE TABLE IF NOT EXISTS jobs (
                 job_id          TEXT PRIMARY KEY,
