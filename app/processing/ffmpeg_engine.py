@@ -25,10 +25,15 @@ class FFmpegEngine:
             raise RuntimeError(f"FFmpeg failed (exit {result.returncode}): {error_tail}")
         return result
 
+    # Shared x264 params to limit encoder memory on constrained containers.
+    # rc-lookahead=10 (vs default 30) and ref=1 (vs default 2-3) slash the
+    # frame-buffer footprint with minimal quality impact at -preset fast.
+    _X264_LOW_MEM = "rc-lookahead=10:ref=1"
+
     def execute_cuts(self, scenes: list[Scene]) -> list[Path]:
         """Cut the source video into segments based on scene boundaries.
-        Scales down to max 1920px (1080p) at this stage to cap memory usage
-        for 4K/high-res inputs on constrained servers."""
+        Scales down to max 1280px (~720p) at this stage to cap memory usage
+        for high-res inputs on constrained servers."""
         segments = []
         for i, scene in enumerate(scenes):
             # Skip scenes that are entirely cut
@@ -47,9 +52,10 @@ class FFmpegEngine:
                 "-ss", f"{scene.start_time:.3f}",
                 "-i", str(self.source),
                 "-t", f"{duration:.3f}",
-                # Scale to max 1920px on longest side; never upscale; ensure even dims
-                "-vf", "scale=1920:1920:force_original_aspect_ratio=decrease:force_divisible_by=2",
+                # Scale to max 1280px on longest side; never upscale; ensure even dims
+                "-vf", "scale=1280:1280:force_original_aspect_ratio=decrease:force_divisible_by=2",
                 "-c:v", "libx264", "-preset", "fast", "-threads", "2",
+                "-x264-params", self._X264_LOW_MEM,
                 "-c:a", "aac",
                 "-movflags", "+faststart",
                 str(output),
@@ -108,6 +114,7 @@ class FFmpegEngine:
                 "-filter:v", video_filter,
                 "-filter:a", atempo_filters,
                 "-c:v", "libx264", "-preset", "fast", "-threads", "2",
+                "-x264-params", self._X264_LOW_MEM,
                 "-movflags", "+faststart",
                 str(output),
             ]
@@ -179,6 +186,7 @@ class FFmpegEngine:
             "-i", str(video_path),
             "-vf", vf,
             "-c:v", "libx264", "-preset", "fast", "-threads", "2",
+            "-x264-params", self._X264_LOW_MEM,
             "-c:a", "copy",
             "-movflags", "+faststart",
             str(output),
@@ -206,6 +214,7 @@ class FFmpegEngine:
             "-i", str(input_path),
             "-vf", crop_filter,
             "-c:v", "libx264", "-preset", "fast", "-threads", "2",
+            "-x264-params", self._X264_LOW_MEM,
             "-c:a", "copy",
             str(output_path),
         ]
@@ -220,6 +229,7 @@ class FFmpegEngine:
             "-i", str(video_path),
             "-vf", f"ass={ass_escaped}",
             "-c:v", "libx264", "-preset", "fast", "-threads", "2",
+            "-x264-params", self._X264_LOW_MEM,
             "-c:a", "copy",
             "-movflags", "+faststart",
             str(output_path),

@@ -296,5 +296,6 @@ class MoviePyEngine:
             fps=30,
             preset="fast",
             threads=2,
+            ffmpeg_params=["-x264-params", "rc-lookahead=10:ref=1"],
         )
         video_clip.close()

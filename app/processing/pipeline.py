@@ -109,6 +109,7 @@ async def run_pipeline(job_id: str, video_path: Path, settings: Settings):
             preset="fast",
             audio_codec="aac",
             threads=2,
+            ffmpeg_params=["-x264-params", "rc-lookahead=10:ref=1"],
         )
         base_video.close()
 
