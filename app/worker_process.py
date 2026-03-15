@@ -9,8 +9,30 @@ Progress is written to the shared SQLite database and the main process
 reads it via WebSocket polling.
 """
 import asyncio
+import base64
+import os
 import sys
+import tempfile
 from pathlib import Path
+
+
+def _bootstrap_gcp_credentials() -> None:
+    """Same bootstrap as main.py — needed because this is a separate process."""
+    b64 = os.environ.get("GOOGLE_CREDENTIALS_B64")
+    if not b64:
+        return
+    if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+        if os.path.isfile(os.environ["GOOGLE_APPLICATION_CREDENTIALS"]):
+            return
+    data = base64.b64decode(b64)
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json", prefix="gcp_sa_")
+    tmp.write(data)
+    tmp.flush()
+    tmp.close()
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp.name
+
+
+_bootstrap_gcp_credentials()
 
 
 async def main(job_id: str) -> None:

@@ -33,8 +33,9 @@ class Settings(BaseSettings):
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     @model_validator(mode="after")
-    def resolve_ffmpeg_path(self) -> "Settings":
-        """Use the imageio_ffmpeg bundled binary when ffmpeg is not on PATH."""
+    def resolve_paths(self) -> "Settings":
+        """Resolve temp_dir to absolute so subprocess paths never depend on cwd."""
+        self.temp_dir = self.temp_dir.resolve()
         if self.ffmpeg_path == "ffmpeg":
             try:
                 import imageio_ffmpeg
