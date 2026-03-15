@@ -3,24 +3,49 @@ from pathlib import Path
 
 def extract_video_metadata(video_path: Path) -> dict:
     """
-    Extract duration, resolution, FPS and audio presence using MoviePy.
-    Avoids a hard dependency on ffprobe (not bundled by imageio_ffmpeg).
+    Extract duration, resolution, FPS and audio presence using ffprobe.
+    Avoids codec compatibility issues — ffprobe reads container metadata
+    without decoding frames, so HEVC, VP9, and any mobile format works.
     """
-    from moviepy import VideoFileClip
+    import subprocess
+    import json
 
-    clip = VideoFileClip(str(video_path))
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "quiet",
+            "-print_format", "json",
+            "-show_streams", "-show_format",
+            str(video_path),
+        ],
+        capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"ffprobe failed on {video_path.name}: {result.stderr[:300]}")
+
+    data = json.loads(result.stdout)
+    streams = data.get("streams", [])
+
+    video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
+    if not video_stream:
+        raise RuntimeError(f"No video stream found in {video_path.name}")
+
+    duration = float(data.get("format", {}).get("duration", 0))
+
+    fps_str = video_stream.get("r_frame_rate", "30/1")
     try:
-        metadata = {
-            "duration": round(clip.duration, 2),
-            "width": clip.w,
-            "height": clip.h,
-            "fps": round(clip.fps, 2),
-            "frame_count": int(clip.fps * clip.duration),
-            "has_audio": clip.audio is not None,
-        }
-    finally:
-        clip.close()
-    return metadata
+        num, den = fps_str.split("/")
+        fps = float(num) / float(den) if float(den) else 30.0
+    except Exception:
+        fps = 30.0
+
+    return {
+        "duration": round(duration, 2),
+        "width": int(video_stream.get("width", 0)),
+        "height": int(video_stream.get("height", 0)),
+        "fps": round(fps, 2),
+        "frame_count": int(fps * duration),
+        "has_audio": any(s.get("codec_type") == "audio" for s in streams),
+    }
 
 
 def extract_keyframes(
