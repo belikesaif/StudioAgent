@@ -41,18 +41,27 @@ class FFmpegEngine:
                 continue
 
             output = self.work_dir / f"segment_{i:03d}.mp4"
+            duration = scene.end_time - scene.start_time
             cmd = [
                 self.ffmpeg, "-y",
-                "-i", str(self.source),
                 "-ss", f"{scene.start_time:.3f}",
-                "-to", f"{scene.end_time:.3f}",
+                "-i", str(self.source),
+                "-t", f"{duration:.3f}",
                 # Scale to max 1920px on longest side; never upscale; ensure even dims
                 "-vf", "scale=1920:1920:force_original_aspect_ratio=decrease:force_divisible_by=2",
                 "-c:v", "libx264", "-preset", "fast", "-threads", "2",
                 "-c:a", "aac",
+                "-movflags", "+faststart",
                 str(output),
             ]
             self._run(cmd)
+
+            # Validate the segment file is non-trivial (at least 4 KiB)
+            if not output.exists() or output.stat().st_size < 4096:
+                raise RuntimeError(
+                    f"Segment {output.name} is missing or too small "
+                    f"({output.stat().st_size if output.exists() else 0} bytes)"
+                )
             segments.append(output)
 
         return segments
@@ -99,6 +108,7 @@ class FFmpegEngine:
                 "-filter:v", video_filter,
                 "-filter:a", atempo_filters,
                 "-c:v", "libx264", "-preset", "fast", "-threads", "2",
+                "-movflags", "+faststart",
                 str(output),
             ]
             self._run(cmd)
@@ -170,6 +180,7 @@ class FFmpegEngine:
             "-vf", vf,
             "-c:v", "libx264", "-preset", "fast", "-threads", "2",
             "-c:a", "copy",
+            "-movflags", "+faststart",
             str(output),
         ]
         self._run(cmd)
@@ -210,6 +221,7 @@ class FFmpegEngine:
             "-vf", f"ass={ass_escaped}",
             "-c:v", "libx264", "-preset", "fast", "-threads", "2",
             "-c:a", "copy",
+            "-movflags", "+faststart",
             str(output_path),
         ]
         self._run(cmd)
